@@ -24,6 +24,9 @@ read-only widget.
 4. Fill in the application details Last.fm asks for, such as:
    - application name
    - description
+   - callback URL: for this widget, use any placeholder HTTPS URL such as
+     `https://example.com/lastfm/callback`, because this app does not use the
+     Last.fm user-auth redirect flow
    - optional logo
 5. Save the application and copy the generated API key.
 6. Export it before starting the server:
