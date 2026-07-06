@@ -1,0 +1,7 @@
+{
+  "name": "lastfm-http-track",
+  "private": true,
+  "description": "HTTP-streamed Last.fm now playing widget without client-side JavaScript",
+  "scripts": {
+  }
+}
