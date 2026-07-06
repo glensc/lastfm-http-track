@@ -23,6 +23,7 @@ function createWidgetService({
   let sourceState = null;
   let timer = null;
   let isRefreshing = false;
+  let stopped = false;
   let artCache = createEmptyArtCache();
 
   function scheduleNext() {
@@ -55,7 +56,9 @@ function createWidgetService({
       sourceState = nextSourceState;
     } finally {
       isRefreshing = false;
-      scheduleNext();
+      if (!stopped) {
+        scheduleNext();
+      }
     }
   }
 
@@ -110,6 +113,7 @@ function createWidgetService({
   }
 
   function stop() {
+    stopped = true;
     clearTimeout(timer);
   }
 
