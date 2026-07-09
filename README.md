@@ -60,6 +60,29 @@ Notes:
 - `WIDGET_KEEPALIVE_MS`: keepalive cadence for open streaming responses. Defaults to `15000`.
 - `LOG_LEVEL`: `info` by default. Set to `debug` for outbound request, cache,
   and polling detail.
+- `TRUST_PROXY`: `false` by default. Set `true` to trust forwarded proxy
+  headers from the immediate upstream peer, or use `loopback`,
+  `loopback,linklocal`, or `loopback,linklocal,uniquelocal` to only trust
+  peers in those address ranges.
+
+## nginx reverse proxy
+
+When this app runs behind nginx, configure nginx to forward the client address
+and scheme:
+
+```nginx
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+The app always logs the socket peer as `remote_address`. When `TRUST_PROXY`
+allows the nginx peer, it also logs the resolved end-user address as
+`client_ip`.
+
+Only enable proxy-header trust when requests reach the app through a trusted
+reverse proxy path. If the app port is reachable directly, block that access
+with your firewall, container network policy, or similar controls.
 
 [spotify-status-without-js]: https://lina.sh/blog/spotify-status-without-js
 [Lina]: https://lina.sh/
