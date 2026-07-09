@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { createApp } = require("../src/server");
+const { getRequestAddressInfo } = require("../src/request-address");
 
 test("widget endpoints expose embed page, stream shell, art proxy, and redirects", async (context) => {
   const { entries, logger } = createStubLogger();
@@ -43,7 +44,11 @@ test("widget endpoints expose embed page, stream shell, art proxy, and redirects
       nowPlayingPollMs: 1000,
       idlePollMs: 1000,
       lastfmApiKey: "",
-      adapter: "api"
+      adapter: "api",
+      trustProxy: {
+        enabled: false,
+        scopes: []
+      }
     },
     dataSource: fakeDataSource,
     fetchImpl,
@@ -109,9 +114,128 @@ test("widget endpoints expose embed page, stream shell, art proxy, and redirects
     latestRequestLog(entries, "/widget/track").fields.status,
     302
   );
+  assert.match(latestRequestLog(entries, "/widget").fields.remote_address, /127\.0\.0\.1|::1|::ffff:127\.0\.0\.1/);
+  assert.match(latestRequestLog(entries, "/widget").fields.client_ip, /127\.0\.0\.1|::1/);
   assert.ok(entries.some((entry) => entry.message === "stream client connected" && entry.fields.pathname === "/widget/stream"));
   assert.ok(entries.some((entry) => entry.message === "stream client disconnected" && entry.fields.pathname === "/widget/stream"));
   assert.equal(entries.some((entry) => /keepalive/i.test(entry.message)), false);
+});
+
+test("trusted proxy request logs keep peer address and expose forwarded client ip", async (context) => {
+  const { entries, logger } = createStubLogger();
+  const { server } = createApp({
+    config: {
+      port: 0,
+      lastfmUsername: "demo-user",
+      keepAliveMs: 1000,
+      nowPlayingPollMs: 1000,
+      idlePollMs: 1000,
+      lastfmApiKey: "",
+      adapter: "api",
+      trustProxy: {
+        enabled: true,
+        scopes: ["all"]
+      }
+    },
+    dataSource: {
+      async fetchTrack() {
+        return {
+          type: "idle",
+          username: "demo-user"
+        };
+      }
+    },
+    logger,
+    now: () => new Date("2026-06-17T12:00:00.000Z")
+  });
+
+  await new Promise((resolve) => server.listen(0, resolve));
+  context.after(() => server.close());
+
+  const address = server.address();
+  const response = await fetch(`http://127.0.0.1:${address.port}/widget`, {
+    headers: {
+      "x-forwarded-for": "10.0.0.2, 198.51.100.7, 127.0.0.1",
+      "x-forwarded-proto": "https"
+    }
+  });
+
+  assert.equal(response.status, 200);
+  await waitFor(() => countRequestLogs(entries, "/widget") >= 1);
+
+  const log = latestRequestLog(entries, "/widget").fields;
+  assert.match(log.remote_address, /127\.0\.0\.1|::1|::ffff:127\.0\.0\.1/);
+  assert.equal(log.client_ip, "198.51.100.7");
+  assert.equal(log.forwarded_for, "10.0.0.2, 198.51.100.7, 127.0.0.1");
+  assert.equal(log.forwarded_proto, "https");
+});
+
+test("request address info ignores forwarded headers without proxy trust", () => {
+  const info = getRequestAddressInfo(createRequest({
+    remoteAddress: "::ffff:198.51.100.20",
+    headers: {
+      "x-forwarded-for": "203.0.113.40",
+      "x-real-ip": "203.0.113.41"
+    }
+  }), {
+    trustProxy: {
+      enabled: false,
+      scopes: []
+    }
+  });
+
+  assert.equal(info.remoteAddress, "::ffff:198.51.100.20");
+  assert.equal(info.clientIp, "198.51.100.20");
+  assert.equal(info.forwardedFor, "203.0.113.40");
+});
+
+test("request address info prefers the left-most public forwarded client ip", () => {
+  const info = getRequestAddressInfo(createRequest({
+    remoteAddress: "127.0.0.1",
+    headers: {
+      "x-forwarded-for": "10.0.0.2, 198.51.100.7, 127.0.0.1"
+    }
+  }), {
+    trustProxy: {
+      enabled: true,
+      scopes: ["loopback"]
+    }
+  });
+
+  assert.equal(info.clientIp, "198.51.100.7");
+});
+
+test("request address info falls back to x-real-ip for trusted proxies", () => {
+  const info = getRequestAddressInfo(createRequest({
+    remoteAddress: "::1",
+    headers: {
+      "x-real-ip": "203.0.113.44"
+    }
+  }), {
+    trustProxy: {
+      enabled: true,
+      scopes: ["loopback"]
+    }
+  });
+
+  assert.equal(info.clientIp, "203.0.113.44");
+});
+
+test("request address info ignores spoofed forwarded headers from untrusted peers", () => {
+  const info = getRequestAddressInfo(createRequest({
+    remoteAddress: "198.51.100.200",
+    headers: {
+      "x-forwarded-for": "203.0.113.50",
+      "x-real-ip": "203.0.113.51"
+    }
+  }), {
+    trustProxy: {
+      enabled: true,
+      scopes: ["loopback"]
+    }
+  });
+
+  assert.equal(info.clientIp, "198.51.100.200");
 });
 
 function createStubLogger() {
@@ -146,6 +270,15 @@ function countRequestLogs(entries, pathname) {
 
 function latestRequestLog(entries, pathname) {
   return entries.filter((entry) => entry.message === "request completed" && entry.fields.pathname === pathname).at(-1);
+}
+
+function createRequest({ remoteAddress, headers = {} }) {
+  return {
+    headers,
+    socket: {
+      remoteAddress
+    }
+  };
 }
 
 function waitFor(predicate, timeoutMs = 2000) {
