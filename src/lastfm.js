@@ -16,6 +16,8 @@ function createLastFmApiAdapter({ apiKey, username, fetchImpl = fetch }) {
         headers: {
           "user-agent": "lastfm-http-track"
         }
+      }, {
+        purpose: "lastfm-api"
       });
 
       if (!response.ok) {
