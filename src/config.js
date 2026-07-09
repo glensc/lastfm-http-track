@@ -7,6 +7,7 @@ function numberFromEnv(value, fallback) {
 function loadConfig(env = process.env) {
   return {
     port: numberFromEnv(env.PORT, 3000),
+    logLevel: env.LOG_LEVEL || "info",
     lastfmApiKey: env.LASTFM_API_KEY || "",
     lastfmUsername: env.LASTFM_USERNAME || "me",
     adapter: env.LASTFM_ADAPTER || "api",

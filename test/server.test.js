@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { createApp } = require("../src/server");
 
 test("widget endpoints expose embed page, stream shell, art proxy, and redirects", async (context) => {
+  const { entries, logger } = createStubLogger();
   const artBytes = Buffer.from("image-bytes");
   const fakeDataSource = {
     async fetchTrack() {
@@ -46,6 +47,7 @@ test("widget endpoints expose embed page, stream shell, art proxy, and redirects
     },
     dataSource: fakeDataSource,
     fetchImpl,
+    logger,
     now: () => new Date("2026-06-17T12:00:00.000Z")
   });
 
@@ -85,7 +87,66 @@ test("widget endpoints expose embed page, stream shell, art proxy, and redirects
   const trackResponse = await fetch(`${baseUrl}/widget/track`, { redirect: "manual" });
   assert.equal(trackResponse.status, 302);
   assert.equal(trackResponse.headers.get("location"), "https://www.last.fm/music/Artist/_/Track");
+
+  await waitFor(() => entries.some((entry) => entry.message === "stream client disconnected"));
+  await waitFor(() => countRequestLogs(entries, "/widget") >= 1);
+  await waitFor(() => countRequestLogs(entries, "/widget/art") >= 1);
+  await waitFor(() => countRequestLogs(entries, "/widget/track") >= 1);
+
+  assert.equal(
+    latestRequestLog(entries, "/widget").fields.status,
+    200
+  );
+  assert.equal(
+    latestRequestLog(entries, "/widget/stream").fields.status,
+    200
+  );
+  assert.equal(
+    latestRequestLog(entries, "/widget/art").fields.status,
+    200
+  );
+  assert.equal(
+    latestRequestLog(entries, "/widget/track").fields.status,
+    302
+  );
+  assert.ok(entries.some((entry) => entry.message === "stream client connected" && entry.fields.pathname === "/widget/stream"));
+  assert.ok(entries.some((entry) => entry.message === "stream client disconnected" && entry.fields.pathname === "/widget/stream"));
+  assert.equal(entries.some((entry) => /keepalive/i.test(entry.message)), false);
 });
+
+function createStubLogger() {
+  const entries = [];
+
+  function push(level, message, fields) {
+    entries.push({ level, message, fields });
+  }
+
+  return {
+    entries,
+    logger: {
+      debug(message, fields) {
+        push("debug", message, fields);
+      },
+      info(message, fields) {
+        push("info", message, fields);
+      },
+      error(message, fields) {
+        push("error", message, fields);
+      },
+      isDebugEnabled() {
+        return true;
+      }
+    }
+  };
+}
+
+function countRequestLogs(entries, pathname) {
+  return entries.filter((entry) => entry.message === "request completed" && entry.fields.pathname === pathname).length;
+}
+
+function latestRequestLog(entries, pathname) {
+  return entries.filter((entry) => entry.message === "request completed" && entry.fields.pathname === pathname).at(-1);
+}
 
 function waitFor(predicate, timeoutMs = 2000) {
   const startedAt = Date.now();

@@ -2,6 +2,7 @@ const http = require("node:http");
 
 const { loadConfig } = require("./config");
 const { createLastFmAdapter } = require("./lastfm");
+const { createLoggedFetch, createLogger } = require("./logger");
 const { buildCssPatch, renderEmbedPage, renderShell } = require("./render");
 const {
   buildDisplayState,
@@ -16,7 +17,8 @@ function createWidgetService({
   fetchImpl = fetch,
   now = () => new Date(),
   nowPlayingPollMs = 15000,
-  idlePollMs = 45000
+  idlePollMs = 45000,
+  logger = createLogger()
 }) {
   const subscribers = new Set();
   let displayState = createInitialDisplayState(username);
@@ -31,6 +33,11 @@ function createWidgetService({
     const delay = sourceState && sourceState.type === "track" && sourceState.is_now_playing
       ? nowPlayingPollMs
       : idlePollMs;
+
+    logger.debug("scheduled refresh", {
+      delay_ms: delay,
+      state_type: sourceState ? sourceState.type : "startup"
+    });
 
     timer = setTimeout(runRefresh, delay);
   }
@@ -50,6 +57,9 @@ function createWidgetService({
         displayState = nextDisplayState;
         broadcast(css);
       } else {
+        logger.debug("refresh unchanged", {
+          state_type: nextDisplayState.type
+        });
         displayState = nextDisplayState;
       }
 
@@ -69,6 +79,9 @@ function createWidgetService({
       return nextSourceState;
     } catch (error) {
       artCache = createEmptyArtCache();
+      logger.error("refresh failed", {
+        error: error.message
+      });
       return {
         type: "error",
         username,
@@ -80,18 +93,30 @@ function createWidgetService({
 
   async function refreshArt(nextSourceState) {
     if (nextSourceState.type !== "track" || !nextSourceState.art_url) {
+      logger.debug("artwork cache cleared", {
+        reason: nextSourceState.type !== "track" ? "not-track" : "missing-art"
+      });
       artCache = createEmptyArtCache();
       return;
     }
 
     if (artCache.sourceUrl === nextSourceState.art_url) {
+      logger.debug("artwork cache hit", {
+        source_url: nextSourceState.art_url
+      });
       return;
     }
+
+    logger.debug("artwork cache miss", {
+      source_url: nextSourceState.art_url
+    });
 
     const response = await fetchImpl(nextSourceState.art_url, {
       headers: {
         "user-agent": "lastfm-http-track"
       }
+    }, {
+      purpose: "artwork"
     });
 
     if (!response.ok) {
@@ -155,23 +180,49 @@ function createWidgetService({
   };
 }
 
-function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now } = {}) {
+function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now, logger = createLogger({ level: config.logLevel }) } = {}) {
+  const loggedFetch = createLoggedFetch({
+    fetchImpl,
+    logger
+  });
+
   const widgetService = createWidgetService({
     username: config.lastfmUsername,
     dataSource: dataSource || createLastFmAdapter({
       adapter: config.adapter,
       apiKey: config.lastfmApiKey,
       username: config.lastfmUsername,
-      fetchImpl
+      fetchImpl: loggedFetch,
+      logger
     }),
-    fetchImpl,
+    fetchImpl: loggedFetch,
     now,
     nowPlayingPollMs: config.nowPlayingPollMs,
-    idlePollMs: config.idlePollMs
+    idlePollMs: config.idlePollMs,
+    logger
   });
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    const requestLogFields = buildRequestLogFields(request, url);
+    const startedAt = Date.now();
+    let didLogRequestCompletion = false;
+
+    function logRequestCompletion() {
+      if (didLogRequestCompletion) {
+        return;
+      }
+
+      didLogRequestCompletion = true;
+      logger.info("request completed", {
+        ...requestLogFields,
+        duration_ms: Date.now() - startedAt,
+        status: response.statusCode
+      });
+    }
+
+    response.on("finish", logRequestCompletion);
+    response.on("close", logRequestCompletion);
 
     if (request.method !== "GET") {
       response.writeHead(405, { "content-type": "text/plain; charset=utf-8" });
@@ -192,6 +243,7 @@ function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now }
     }
 
     if (url.pathname === "/widget/stream") {
+      logger.info("stream client connected", requestLogFields);
       response.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
@@ -207,6 +259,7 @@ function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now }
       request.on("close", () => {
         clearInterval(keepAlive);
         widgetService.unsubscribe(response);
+        logger.info("stream client disconnected", requestLogFields);
         response.end();
       });
       return;
@@ -249,6 +302,16 @@ function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now }
   return {
     server,
     widgetService
+  };
+}
+
+function buildRequestLogFields(request, url) {
+  return {
+    method: request.method,
+    pathname: url.pathname,
+    query: url.search ? url.search.slice(1) : undefined,
+    remote_address: request.socket && request.socket.remoteAddress,
+    user_agent: request.headers["user-agent"]
   };
 }
 
