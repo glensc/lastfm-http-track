@@ -8,6 +8,12 @@ Inspired by [spotify-status-without-js] blog post by [Lina].
 LASTFM_API_KEY=your_key LASTFM_USERNAME=me npm start
 ```
 
+Enable debug logging when you want extra request and polling detail:
+
+```bash
+LOG_LEVEL=debug LASTFM_API_KEY=your_key LASTFM_USERNAME=me npm start
+```
+
 The widget is available at `/widget`, which embeds the long-lived `/widget/stream`
 response in an iframe to avoid a perpetual browser loading spinner.
 
@@ -52,6 +58,8 @@ Notes:
 - `LASTFM_NOW_PLAYING_POLL_MS`: polling interval while a track is live. Defaults to `15000`.
 - `LASTFM_IDLE_POLL_MS`: polling interval while idle or unavailable. Defaults to `45000`.
 - `WIDGET_KEEPALIVE_MS`: keepalive cadence for open streaming responses. Defaults to `15000`.
+- `LOG_LEVEL`: `info` by default. Set to `debug` for outbound request, cache,
+  and polling detail.
 
 [spotify-status-without-js]: https://lina.sh/blog/spotify-status-without-js
 [Lina]: https://lina.sh/
