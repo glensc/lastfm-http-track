@@ -1,0 +1,10 @@
+services:
+  lastfm:
+    container_name: lastfm
+    image: lastfm-http-track
+    build: .
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "10"
