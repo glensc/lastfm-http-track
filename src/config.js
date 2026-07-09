@@ -15,6 +15,9 @@ function loadConfig(env = process.env) {
     adapter: env.LASTFM_ADAPTER || "api",
     nowPlayingPollMs: numberFromEnv(env.LASTFM_NOW_PLAYING_POLL_MS, 15000),
     idlePollMs: numberFromEnv(env.LASTFM_IDLE_POLL_MS, 45000),
+    idlePollMaxMs: Number(env.LASTFM_IDLE_POLL_MAX_MS || 300000),
+    unattendedPollMaxMs: Number(env.LASTFM_UNATTENDED_POLL_MAX_MS || 900000),
+    idleBackoffMultiplier: Number(env.LASTFM_IDLE_BACKOFF_MULTIPLIER || 2),
     keepAliveMs: numberFromEnv(env.WIDGET_KEEPALIVE_MS, 15000),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
