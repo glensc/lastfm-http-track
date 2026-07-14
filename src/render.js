@@ -183,14 +183,40 @@ function renderShell({ title = "Last.fm widget" } = {}) {
     @media (max-width: 480px) {
       body {
         min-height: auto;
+        padding: 16px;
       }
 
       .widget {
+        width: min(420px, 100%);
         border-radius: 16px;
+      }
+
+      .widget__header {
+        flex-direction: column;
+        justify-content: center;
+        text-align: center;
       }
 
       .widget__body {
         grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+      }
+
+      .widget__art {
+        justify-self: center;
+      }
+
+      .widget__details {
+        justify-items: center;
+      }
+
+      .widget__empty {
+        text-align: center;
+      }
+
+      .widget__footer {
+        text-align: center;
       }
     }
   </style>

@@ -41,3 +41,17 @@ test("renderShell opens the Last.fm link in the top-level context", () => {
 
   assert.match(html, /<a class="widget__link" href="\/widget\/track" target="_top">Open on Last\.fm<\/a>/);
 });
+
+test("renderShell centers mobile widget framing and stacked content", () => {
+  const html = renderShell();
+
+  assert.match(html, /@media \(max-width: 480px\) \{/);
+  assert.match(html, /body \{\s*min-height: auto;\s*padding: 16px;/);
+  assert.match(html, /\.widget \{\s*width: min\(420px, 100%\);\s*border-radius: 16px;/);
+  assert.match(html, /\.widget__header \{\s*flex-direction: column;\s*justify-content: center;\s*text-align: center;/);
+  assert.match(html, /\.widget__body \{\s*grid-template-columns: 1fr;\s*justify-items: center;\s*text-align: center;/);
+  assert.match(html, /\.widget__art \{\s*justify-self: center;/);
+  assert.match(html, /\.widget__details \{\s*justify-items: center;/);
+  assert.match(html, /\.widget__empty \{\s*text-align: center;/);
+  assert.match(html, /\.widget__footer \{\s*text-align: center;/);
+});
