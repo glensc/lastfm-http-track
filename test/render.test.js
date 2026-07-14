@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { buildCssPatch, toCssString } = require("../src/render");
+const { buildCssPatch, renderShell, toCssString } = require("../src/render");
 
 test("toCssString escapes quotes and newlines", () => {
   assert.equal(toCssString('A "quote"\nline'), '"A \\\"quote\\\"\\A line"');
@@ -34,4 +34,10 @@ test("buildCssPatch renders unavailable states", () => {
 
   assert.match(css, /--empty-text:"Last\.fm is down"/);
   assert.match(css, /--details-display:none/);
+});
+
+test("renderShell opens the Last.fm link in the top-level context", () => {
+  const html = renderShell();
+
+  assert.match(html, /<a class="widget__link" href="\/widget\/track" target="_top">Open on Last\.fm<\/a>/);
 });

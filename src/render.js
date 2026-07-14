@@ -212,7 +212,7 @@ function renderShell({ title = "Last.fm widget" } = {}) {
       <div class="widget__empty"></div>
     </section>
     <footer class="widget__footer">
-      <a class="widget__link" href="/widget/track">Open on Last.fm</a>
+      <a class="widget__link" href="/widget/track" target="_top">Open on Last.fm</a>
     </footer>
   </article>
 `;
