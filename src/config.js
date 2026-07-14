@@ -1,3 +1,5 @@
+const { parseTrustProxy } = require("./request-address");
+
 function numberFromEnv(value, fallback) {
   const parsed = Number(value);
 
@@ -13,7 +15,8 @@ function loadConfig(env = process.env) {
     adapter: env.LASTFM_ADAPTER || "api",
     nowPlayingPollMs: numberFromEnv(env.LASTFM_NOW_PLAYING_POLL_MS, 15000),
     idlePollMs: numberFromEnv(env.LASTFM_IDLE_POLL_MS, 45000),
-    keepAliveMs: numberFromEnv(env.WIDGET_KEEPALIVE_MS, 15000)
+    keepAliveMs: numberFromEnv(env.WIDGET_KEEPALIVE_MS, 15000),
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
 }
 

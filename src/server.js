@@ -3,6 +3,7 @@ const http = require("node:http");
 const { loadConfig } = require("./config");
 const { createLastFmAdapter } = require("./lastfm");
 const { createLoggedFetch, createLogger } = require("./logger");
+const { getRequestAddressInfo } = require("./request-address");
 const { buildCssPatch, renderEmbedPage, renderShell } = require("./render");
 const {
   buildDisplayState,
@@ -204,7 +205,7 @@ function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now, 
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
-    const requestLogFields = buildRequestLogFields(request, url);
+    const requestLogFields = buildRequestLogFields(request, url, config);
     const startedAt = Date.now();
     let didLogRequestCompletion = false;
 
@@ -305,12 +306,17 @@ function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now, 
   };
 }
 
-function buildRequestLogFields(request, url) {
+function buildRequestLogFields(request, url, config) {
+  const addressInfo = getRequestAddressInfo(request, config);
+
   return {
     method: request.method,
     pathname: url.pathname,
     query: url.search ? url.search.slice(1) : undefined,
-    remote_address: request.socket && request.socket.remoteAddress,
+    remote_address: addressInfo.remoteAddress,
+    client_ip: addressInfo.clientIp,
+    forwarded_for: addressInfo.forwardedFor,
+    forwarded_proto: addressInfo.forwardedProto,
     user_agent: request.headers["user-agent"]
   };
 }
