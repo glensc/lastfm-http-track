@@ -19,7 +19,12 @@ function createWidgetService({
   now = () => new Date(),
   nowPlayingPollMs = 15000,
   idlePollMs = 45000,
-  logger = createLogger()
+  idlePollMaxMs = 300000,
+  unattendedPollMaxMs = 900000,
+  idleBackoffMultiplier = 2,
+  logger = createLogger(),
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout
 }) {
   const subscribers = new Set();
   let displayState = createInitialDisplayState(username);
@@ -28,19 +33,35 @@ function createWidgetService({
   let isRefreshing = false;
   let stopped = false;
   let artCache = createEmptyArtCache();
+  let consecutiveIdleRefreshes = 0;
 
   function scheduleNext() {
-    clearTimeout(timer);
-    const delay = sourceState && sourceState.type === "track" && sourceState.is_now_playing
-      ? nowPlayingPollMs
-      : idlePollMs;
+    clearTimeoutImpl(timer);
+    const delay = getNextDelayMs();
 
     logger.debug("scheduled refresh", {
       delay_ms: delay,
-      state_type: sourceState ? sourceState.type : "startup"
+      state_type: sourceState ? sourceState.type : "startup",
+      idle_refreshes: consecutiveIdleRefreshes,
+      subscriber_count: subscribers.size
     });
 
-    timer = setTimeout(runRefresh, delay);
+    timer = setTimeoutImpl(runRefresh, delay);
+  }
+
+  function getNextDelayMs() {
+    if (sourceState && sourceState.type === "track" && sourceState.is_now_playing) {
+      return nowPlayingPollMs;
+    }
+
+    const maxDelay = subscribers.size > 0 ? idlePollMaxMs : unattendedPollMaxMs;
+    const multiplier = Math.max(1, idleBackoffMultiplier);
+    const exponent = Math.max(0, consecutiveIdleRefreshes - 1);
+
+    return Math.min(
+      idlePollMs * (multiplier ** exponent),
+      maxDelay
+    );
   }
 
   async function runRefresh() {
@@ -52,6 +73,7 @@ function createWidgetService({
     try {
       const nextSourceState = await loadSourceState();
       const nextDisplayState = buildDisplayState(nextSourceState, artCache.version, now());
+      updateBackoffState(sourceState, nextSourceState);
 
       if (!isSameDisplayState(displayState, nextDisplayState)) {
         const css = buildCssPatch(displayState, nextDisplayState);
@@ -71,6 +93,20 @@ function createWidgetService({
         scheduleNext();
       }
     }
+  }
+
+  function updateBackoffState(previousSourceState, nextSourceState) {
+    if (nextSourceState.type === "track" && nextSourceState.is_now_playing) {
+      consecutiveIdleRefreshes = 0;
+      return;
+    }
+
+    if (didDisplayedSourceChange(previousSourceState, nextSourceState)) {
+      consecutiveIdleRefreshes = 1;
+      return;
+    }
+
+    consecutiveIdleRefreshes += 1;
   }
 
   async function loadSourceState() {
@@ -140,12 +176,18 @@ function createWidgetService({
 
   function stop() {
     stopped = true;
-    clearTimeout(timer);
+    clearTimeoutImpl(timer);
   }
 
   function subscribe(response) {
+    const hadSubscribers = subscribers.size > 0;
     subscribers.add(response);
     response.write(buildCssPatch(null, displayState));
+
+    if (!hadSubscribers && sourceState && !(sourceState.type === "track" && sourceState.is_now_playing)) {
+      consecutiveIdleRefreshes = 1;
+      scheduleNext();
+    }
   }
 
   function unsubscribe(response) {
@@ -200,6 +242,9 @@ function createApp({ config = loadConfig(), dataSource, fetchImpl = fetch, now, 
     now,
     nowPlayingPollMs: config.nowPlayingPollMs,
     idlePollMs: config.idlePollMs,
+    idlePollMaxMs: config.idlePollMaxMs,
+    unattendedPollMaxMs: config.unattendedPollMaxMs,
+    idleBackoffMultiplier: config.idleBackoffMultiplier,
     logger
   });
 
@@ -328,6 +373,34 @@ function createEmptyArtCache() {
     bytes: null,
     version: ""
   };
+}
+
+function didDisplayedSourceChange(previousSourceState, nextSourceState) {
+  if (!previousSourceState) {
+    return true;
+  }
+
+  if (previousSourceState.type !== nextSourceState.type) {
+    return true;
+  }
+
+  if (nextSourceState.type === "track") {
+    return [
+      "track_name",
+      "artist_name",
+      "album_name",
+      "track_url",
+      "art_url",
+      "is_now_playing",
+      "played_at"
+    ].some((key) => previousSourceState[key] !== nextSourceState[key]);
+  }
+
+  if (nextSourceState.type === "idle") {
+    return previousSourceState.message !== nextSourceState.message;
+  }
+
+  return previousSourceState.reason !== nextSourceState.reason || previousSourceState.message !== nextSourceState.message;
 }
 
 module.exports = {
